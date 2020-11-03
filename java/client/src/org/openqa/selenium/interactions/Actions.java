@@ -21,21 +21,19 @@ import static org.openqa.selenium.interactions.PointerInput.Kind.MOUSE;
 import static org.openqa.selenium.interactions.PointerInput.MouseButton.LEFT;
 import static org.openqa.selenium.interactions.PointerInput.MouseButton.RIGHT;
 
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableMap;
-
 import org.openqa.selenium.Keys;
 import org.openqa.selenium.UnsupportedCommandException;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
 import org.openqa.selenium.interactions.PointerInput.Origin;
 import org.openqa.selenium.interactions.internal.MouseAction.Button;
-import org.openqa.selenium.internal.Locatable;
+import org.openqa.selenium.internal.Require;
 
 import java.time.Duration;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.IntConsumer;
@@ -47,10 +45,12 @@ import java.util.logging.Logger;
  * <p>
  * Implements the builder pattern: Builds a CompositeAction containing all actions specified by the
  * method calls.
+ * <p>
+ * Call {@link #perform()} at the end of the method chain to actually perform the actions.
  */
 public class Actions {
 
-  private final static Logger LOG = Logger.getLogger(Actions.class.getName());
+  private static final Logger LOG = Logger.getLogger(Actions.class.getName());
   private final WebDriver driver;
 
   // W3C
@@ -62,10 +62,9 @@ public class Actions {
   private final Keyboard jsonKeyboard;
   private final Mouse jsonMouse;
   protected CompositeAction action = new CompositeAction();
-  private RuntimeException actionsException;
 
   public Actions(WebDriver driver) {
-    this.driver = Preconditions.checkNotNull(driver);
+    this.driver = Require.nonNull("Driver", driver);
 
     if (driver instanceof HasInputDevices) {
       HasInputDevices deviceOwner = (HasInputDevices) driver;
@@ -75,32 +74,6 @@ public class Actions {
       this.jsonKeyboard = null;
       this.jsonMouse = null;
     }
-  }
-
-  /**
-   * A constructor that should only be used when the keyboard or mouse were extended to provide
-   * additional functionality (for example, dragging-and-dropping from the desktop).
-   * @param keyboard the {@link Keyboard} implementation to delegate to.
-   * @param mouse the {@link Mouse} implementation to delegate to.
-   * @deprecated Use the new interactions APIs.
-   */
-  @Deprecated
-  public Actions(Keyboard keyboard, Mouse mouse) {
-    this.driver = null;
-    this.jsonKeyboard = keyboard;
-    this.jsonMouse = mouse;
-  }
-
-  /**
-   * Only used by the TouchActions class.
-   * @param keyboard implementation to delegate to.
-   * @deprecated Use the new interactions API.
-   */
-  @Deprecated
-  public Actions(Keyboard keyboard) {
-    this.driver = null;
-    this.jsonKeyboard = keyboard;
-    this.jsonMouse = null;
   }
 
   /**
@@ -184,6 +157,8 @@ public class Actions {
    *
    * @param keys The keys.
    * @return A self reference.
+   *
+   * @throws IllegalArgumentException if keys is null
    */
   public Actions sendKeys(CharSequence... keys) {
     if (isBuildingActions()) {
@@ -204,6 +179,8 @@ public class Actions {
    * @param target element to focus on.
    * @param keys The keys.
    * @return A self reference.
+   *
+   * @throws IllegalArgumentException if keys is null
    */
   public Actions sendKeys(WebElement target, CharSequence... keys) {
     if (isBuildingActions()) {
@@ -223,6 +200,9 @@ public class Actions {
   }
 
   private Actions sendKeysInTicks(CharSequence... keys) {
+    if (keys == null) {
+      throw new IllegalArgumentException("Keys should be a not null CharSequence");
+    }
     for (CharSequence key : keys) {
       key.codePoints().forEach(codePoint -> {
         tick(defaultKeyboard.createKeyDown(codePoint));
@@ -234,9 +214,10 @@ public class Actions {
 
   private Actions addKeyAction(CharSequence key, IntConsumer consumer) {
     // Verify that we only have a single character to type.
-    Preconditions.checkState(
-        key.codePoints().count() == 1,
-        "Only one code point is allowed at a time: %s", key);
+    if (key.codePoints().count() != 1) {
+      throw new IllegalStateException(String.format(
+        "Only one code point is allowed at a time: %s", key));
+    }
 
     key.codePoints().forEach(consumer);
 
@@ -372,7 +353,7 @@ public class Actions {
 
   /**
    * Moves the mouse to the middle of the element. The element is scrolled into view and its
-   * location is calculated using getBoundingClientRect.
+   * location is calculated using getClientRects.
    * @param target element to move to.
    * @return A self reference.
    */
@@ -385,12 +366,12 @@ public class Actions {
   }
 
   /**
-   * Moves the mouse to an offset from the top-left corner of the element.
-   * The element is scrolled into view and its location is calculated using getBoundingClientRect.
+   * Moves the mouse to an offset from the center of the element.
+   * The element is scrolled into view and its location is calculated using getClientRects.
    * @param target element to move to.
-   * @param xOffset Offset from the top-left corner. A negative value means coordinates left from
+   * @param xOffset Offset from the center. A negative value means coordinates left from
    * the element.
-   * @param yOffset Offset from the top-left corner. A negative value means coordinates above
+   * @param yOffset Offset from the center. A negative value means coordinates above
    * the element.
    * @return A self reference.
    */
@@ -507,7 +488,6 @@ public class Actions {
    * @param pause pause duration, in milliseconds.
    * @return A self reference.
    */
-  @Deprecated
   public Actions pause(long pause) {
     if (isBuildingActions()) {
       action.addAction(new PauseAction(pause));
@@ -517,7 +497,7 @@ public class Actions {
   }
 
   public Actions pause(Duration duration) {
-    Preconditions.checkNotNull(duration, "Duration of pause not set");
+    Require.nonNegative("Duration of pause", duration);
     if (isBuildingActions()) {
       action.addAction(new PauseAction(duration.toMillis()));
     }
@@ -541,24 +521,22 @@ public class Actions {
     for (Interaction action : actions) {
       Sequence sequence = getSequence(action.getSource());
       sequence.addAction(action);
-      seenSources.remove(action.getSource());
     }
 
     // And now pad the remaining sequences with a pause.
-    for (InputSource source : seenSources) {
+    Set<InputSource> unseen = new HashSet<>(sequences.keySet());
+    unseen.removeAll(seenSources);
+    for (InputSource source : unseen) {
       getSequence(source).addAction(new Pause(source, Duration.ZERO));
-    }
-
-    if (isBuildingActions()) {
-      actionsException = new IllegalArgumentException(
-          "You may not use new style interactions with old style actions");
     }
 
     return this;
   }
 
   public Actions tick(Action action) {
-    Preconditions.checkState(action instanceof IsInteraction);
+    if (!(action instanceof IsInteraction)) {
+      throw new IllegalStateException("Expected action to implement IsInteraction");
+    }
 
     for (Interaction interaction :
         ((IsInteraction) action).asInteractions(defaultMouse, defaultKeyboard)) {
@@ -574,13 +552,16 @@ public class Actions {
 
   /**
    * Generates a composite action containing all actions so far, ready to be performed (and
-   * resets the internal builder state, so subsequent calls to {@link #build()} will contain fresh
+   * resets the internal builder state, so subsequent calls to this method will contain fresh
    * sequences).
+   * <p>
+   * <b>Warning</b>: you may want to call {@link #perform()} instead to actually perform
+   * the actions.
    *
    * @return the composite action
    */
   public Action build() {
-    Action toReturn = new BuiltAction(driver, ImmutableMap.copyOf(sequences), action);
+    Action toReturn = new BuiltAction(driver, new LinkedHashMap<>(sequences), action);
     action = new CompositeAction();
     sequences.clear();
     return toReturn;

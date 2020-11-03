@@ -17,11 +17,10 @@
 
 package org.openqa.selenium.interactions;
 
-import com.google.common.annotations.VisibleForTesting;
-import com.google.common.base.Preconditions;
-import com.google.common.collect.ImmutableList;
+import org.openqa.selenium.internal.Require;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -31,6 +30,7 @@ import java.util.List;
 public class CompositeAction implements Action, IsInteraction {
   private final List<Action> actionsList = new ArrayList<>();
 
+  @Override
   public void perform() {
     for (Action action : actionsList) {
       action.perform();
@@ -38,15 +38,14 @@ public class CompositeAction implements Action, IsInteraction {
   }
 
   public CompositeAction addAction(Action action) {
-    Preconditions.checkNotNull(action, "Null actions are not supported.");
-    actionsList.add(action);
+    actionsList.add(Require.nonNull("Action", action));
     return this;
   }
 
   /**
    * @deprecated No replacement.
    */
-  @VisibleForTesting
+  //VisibleForTesting
   @Deprecated
   int getNumberOfActions() {
     return actionsList.size();
@@ -54,7 +53,7 @@ public class CompositeAction implements Action, IsInteraction {
 
   @Override
   public List<Interaction> asInteractions(PointerInput mouse, KeyInput keyboard) {
-    ImmutableList.Builder<Interaction> interactions = ImmutableList.builder();
+    List<Interaction> interactions = new ArrayList<>();
 
     for (Action action : actionsList) {
       if (!(action instanceof IsInteraction)) {
@@ -65,6 +64,6 @@ public class CompositeAction implements Action, IsInteraction {
       interactions.addAll(((IsInteraction) action).asInteractions(mouse, keyboard));
     }
 
-    return interactions.build();
+    return Collections.unmodifiableList(interactions);
   }
 }

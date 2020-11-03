@@ -26,7 +26,7 @@
  * There are three primary classes exported by this module:
  *
  * 1. {@linkplain ServiceBuilder}: configures the
- *     {@link selenium-webdriver/remote.DriverService remote.DriverService}
+ *     {@link ./remote.DriverService remote.DriverService}
  *     that manages the
  *     [OperaDriver](https://github.com/operasoftware/operachromiumdriver)
  *     child process.
@@ -67,12 +67,10 @@
  * Users should only instantiate the {@link Driver} class directly when they
  * need a custom driver service configuration (as shown above). For normal
  * operation, users should start Opera using the
- * {@link selenium-webdriver.Builder}.
+ * {@link ./builder.Builder selenium-webdriver.Builder}.
  */
 
 'use strict';
-
-const fs = require('fs');
 
 const http = require('./http'),
     io = require('./io'),
@@ -80,7 +78,6 @@ const http = require('./http'),
     promise = require('./lib/promise'),
     Symbols = require('./lib/symbols'),
     webdriver = require('./lib/webdriver'),
-    portprober = require('./net/portprober'),
     remote = require('./remote');
 
 
@@ -92,6 +89,15 @@ const http = require('./http'),
 const OPERADRIVER_EXE =
     process.platform === 'win32' ? 'operadriver.exe' : 'operadriver';
 
+/**
+ * _Synchronously_ attempts to locate the operadriver executable on the current
+ * system.
+ *
+ * @return {?string} the located executable, or `null`.
+ */
+function locateSynchronously() {
+  return io.findInPath(OPERADRIVER_EXE, true);
+}
 
 /**
  * Creates {@link remote.DriverService} instances that manages an
@@ -107,7 +113,7 @@ class ServiceBuilder extends remote.DriverService.Builder {
    *     cannot be found on the PATH.
    */
   constructor(opt_exe) {
-    let exe = opt_exe || io.findInPath(OPERADRIVER_EXE, true);
+    let exe = opt_exe || locateSynchronously();
     if (!exe) {
       throw Error(
           'The OperaDriver could not be found on the current PATH. Please ' +
@@ -383,7 +389,7 @@ class Driver extends webdriver.WebDriver {
     }
 
     return /** @type {!Driver} */(
-        webdriver.WebDriver.createSession(executor, caps, opt_flow, this));
+        super.createSession(executor, caps, opt_flow));
   }
 
   /**
@@ -403,3 +409,4 @@ exports.Options = Options;
 exports.ServiceBuilder = ServiceBuilder;
 exports.getDefaultService = getDefaultService;
 exports.setDefaultService = setDefaultService;
+exports.locateSynchronously = locateSynchronously;

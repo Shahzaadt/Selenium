@@ -18,24 +18,24 @@
 import pytest
 
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.by import By
 
 
-@pytest.mark.xfail_marionette(
-    reason='https://bugzilla.mozilla.org/show_bug.cgi?id=1309231')
-@pytest.mark.xfail_phantomjs(
-    reason='PhantomJS does not implement page load timeouts')
+@pytest.fixture(autouse=True)
+def reset_timeouts(driver):
+    yield
+    driver.set_page_load_timeout(300)
+
+
 def testShouldTimeoutOnPageLoadTakingTooLong(driver, pages):
     driver.set_page_load_timeout(0.01)
     with pytest.raises(TimeoutException):
         pages.load("simpleTest.html")
 
 
-@pytest.mark.xfail_marionette(
-    reason='https://bugzilla.mozilla.org/show_bug.cgi?id=1309231')
-@pytest.mark.xfail_phantomjs(
-    reason='PhantomJS does not implement page load timeouts')
+@pytest.mark.xfail_safari
 def testClickShouldTimeout(driver, pages):
     pages.load("simpleTest.html")
     driver.set_page_load_timeout(0.01)
     with pytest.raises(TimeoutException):
-        driver.find_element_by_id("multilinelink").click()
+        driver.find_element(By.ID, "multilinelink").click()

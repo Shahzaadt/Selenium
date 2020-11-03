@@ -17,43 +17,76 @@
 
 package org.openqa.selenium.remote.server;
 
-import static com.google.common.net.MediaType.JAVASCRIPT_UTF_8;
-import static java.net.HttpURLConnection.HTTP_NOT_FOUND;
-import static java.net.HttpURLConnection.HTTP_OK;
-import static java.nio.charset.StandardCharsets.UTF_8;
-import static org.openqa.selenium.remote.ErrorCodes.UNKNOWN_COMMAND;
-
 import com.google.common.base.Splitter;
 import com.google.common.base.Strings;
-import com.google.common.cache.Cache;
+import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
-import com.google.gson.GsonBuilder;
-
+import org.openqa.selenium.grid.session.ActiveSession;
+import org.openqa.selenium.grid.web.NoHandler;
+import org.openqa.selenium.internal.Require;
+import org.openqa.selenium.json.Json;
 import org.openqa.selenium.remote.SessionId;
-import org.openqa.selenium.remote.http.HttpRequest;
-import org.openqa.selenium.remote.http.HttpResponse;
-
-import java.io.IOException;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.openqa.selenium.remote.http.HttpHandler;
+import org.openqa.selenium.remote.http.HttpMethod;
+import org.openqa.selenium.remote.http.UrlTemplate;
+import org.openqa.selenium.remote.server.commandhandler.BeginSession;
+import org.openqa.selenium.remote.server.commandhandler.GetAllSessions;
+import org.openqa.selenium.remote.server.commandhandler.GetLogTypes;
+import org.openqa.selenium.remote.server.commandhandler.GetLogsOfType;
+import org.openqa.selenium.remote.server.commandhandler.NoSessionHandler;
+import org.openqa.selenium.remote.server.commandhandler.Status;
+import org.openqa.selenium.remote.server.commandhandler.UploadFile;
 
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.function.Function;
 
 
 class AllHandlers {
 
-  private final Cache<SessionId, ActiveSession> allSessions;
-  private final DriverSessions legacySessions;
+  private final Json json;
+  private final ActiveSessions allSessions;
 
-  public AllHandlers(Cache<SessionId, ActiveSession> allSessions, DriverSessions legacySessions) {
-    this.allSessions = allSessions;
-    this.legacySessions = legacySessions;
+  private final Map<HttpMethod, ImmutableList<Function<String, HttpHandler>>> additionalHandlers;
+
+  public AllHandlers(NewSessionPipeline pipeline, ActiveSessions allSessions) {
+    this.allSessions = Require.nonNull("Active sessions", allSessions);
+    this.json = new Json();
+
+    this.additionalHandlers = ImmutableMap.of(
+        HttpMethod.DELETE, ImmutableList.of(),
+        HttpMethod.GET, ImmutableList.of(
+            handler("/session/{sessionId}/log/types",
+                    params -> new GetLogTypes(json, allSessions.get(new SessionId(params.get("sessionId"))))),
+            handler("/sessions", params -> new GetAllSessions(allSessions, json)),
+            handler("/status", params -> new Status(json))
+        ),
+        HttpMethod.POST, ImmutableList.of(
+            handler("/session", params -> new BeginSession(pipeline, allSessions, json)),
+            handler("/session/{sessionId}/file",
+                    params -> new UploadFile(json, allSessions.get(new SessionId(params.get("sessionId"))))),
+            handler("/session/{sessionId}/log",
+                    params -> new GetLogsOfType(json, allSessions.get(new SessionId(params.get("sessionId"))))),
+            handler("/session/{sessionId}/se/file",
+                    params -> new UploadFile(json, allSessions.get(new SessionId(params.get("sessionId")))))
+        ));
   }
 
-  public CommandHandler match(HttpServletRequest req) {
+  public HttpHandler match(HttpServletRequest req) {
     String path = Strings.isNullOrEmpty(req.getPathInfo()) ? "/" : req.getPathInfo();
+
+    Optional<? extends HttpHandler> additionalHandler = additionalHandlers.get(HttpMethod.valueOf(req.getMethod()))
+        .stream()
+        .map(bundle -> bundle.apply(req.getPathInfo()))
+        .filter(Objects::nonNull)
+        .findFirst();
+
+    if (additionalHandler.isPresent()) {
+      return additionalHandler.get();
+    }
 
     // All commands that take a session id expect that as the path fragment immediately after "/session".
     SessionId id = null;
@@ -65,66 +98,26 @@ class AllHandlers {
     }
 
     if (id != null) {
-      ActiveSession session = allSessions.getIfPresent(id);
-      if (session != null) {
-        return session;
+      ActiveSession session = allSessions.get(id);
+      if (session == null) {
+        return new NoSessionHandler(json, id);
       }
+      return session;
     }
 
-    if ("POST".equalsIgnoreCase(req.getMethod()) && "/session".equals(path)) {
-      return new BeginSession(allSessions, legacySessions);
-    }
-
-    if ("GET".equalsIgnoreCase(req.getMethod()) && "/status".equals(path)) {
-      return new StatusHandler();
-    }
-
-    return new NoHandler();
+    return new NoHandler(json);
   }
 
-  private static class NoHandler implements CommandHandler {
-
-    @Override
-    public void execute(HttpRequest req, HttpResponse resp) throws IOException {
-      // We're not using ImmutableMap for the outer map because it disallows null values.
-      Map<String, Object> responseMap = new HashMap<>();
-      responseMap.put("sessionId", null);
-      responseMap.put("status", UNKNOWN_COMMAND);
-      responseMap.put("value", ImmutableMap.of(
-          "error", "unknown command",
-          "message", String.format(
-              "Unable to find command matching %s to %s",
-              req.getMethod(),
-              req.getUri()),
-          "stacktrace", ""));
-      responseMap = Collections.unmodifiableMap(responseMap);
-
-      byte[] payload = new GsonBuilder().serializeNulls().create().toJson(responseMap)
-          .getBytes(UTF_8);
-
-      resp.setStatus(HTTP_NOT_FOUND);
-      resp.setHeader("Content-Type", JAVASCRIPT_UTF_8.toString());
-      resp.setHeader("Content-Length", String.valueOf(payload.length));
-
-      resp.setContent(payload);
-    }
-  }
-
-  private static class StatusHandler implements CommandHandler {
-
-    @Override
-    public void execute(HttpRequest req, HttpResponse resp) throws IOException {
-      // Write out a minimal W3C status response.
-      byte[] payload = new GsonBuilder().create().toJson(ImmutableMap.of(
-          "ready", true,
-          "message", "Server is running"
-      )).getBytes(UTF_8);
-
-      resp.setStatus(HTTP_OK);
-      resp.setHeader("Content-Type", JAVASCRIPT_UTF_8.toString());
-      resp.setHeader("Content-Length", String.valueOf(payload.length));
-
-      resp.setContent(payload);
-    }
+  private <H extends HttpHandler> Function<String, HttpHandler> handler(
+      String template,
+      Function<Map<String, String>, H> handlerGenerator) {
+    UrlTemplate urlTemplate = new UrlTemplate(template);
+    return path -> {
+      UrlTemplate.Match match = urlTemplate.match(path);
+      if (match == null) {
+        return null;
+      }
+      return handlerGenerator.apply(match.getParameters());
+    };
   }
 }

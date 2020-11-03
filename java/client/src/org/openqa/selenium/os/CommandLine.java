@@ -21,8 +21,6 @@ package org.openqa.selenium.os;
 import static org.openqa.selenium.Platform.MAC;
 import static org.openqa.selenium.Platform.WINDOWS;
 
-import com.google.common.annotations.VisibleForTesting;
-
 import org.openqa.selenium.Platform;
 import org.openqa.selenium.WebDriverException;
 
@@ -32,24 +30,23 @@ import java.util.Map;
 
 public class CommandLine {
 
-  private OsProcess process;
+  private final OsProcess process;
 
   public CommandLine(String executable, String... args) {
-    process = new UnixProcess(executable, args);
+    process = new OsProcess(executable, args);
   }
 
+  /**
+   * @deprecated Use {@link #CommandLine(String, String...)}
+   */
+  @Deprecated
   public CommandLine(String[] cmdarray) {
     String executable = cmdarray[0];
     int length = cmdarray.length - 1;
     String[] args = new String[length];
     System.arraycopy(cmdarray, 1, args, 0, length);
 
-    process = new UnixProcess(executable, args);
-  }
-
-  @VisibleForTesting
-  Map<String, String> getEnvironment() {
-    return process.getEnvironment();
+    process = new OsProcess(executable, args);
   }
 
   /**
@@ -85,7 +82,7 @@ public class CommandLine {
   public void updateDynamicLibraryPath(String extraPath) {
     if (extraPath != null) {
       String existing = System.getenv(getLibraryPathPropertyName());
-      String ldPath = existing != null ? existing + File.separator + extraPath : extraPath;
+      String ldPath = existing != null ? existing + File.pathSeparator + extraPath : extraPath;
       setEnvironmentVariable(getLibraryPathPropertyName(), ldPath);
     }
   }
@@ -120,6 +117,7 @@ public class CommandLine {
     try {
       process.waitFor();
     } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
       throw new WebDriverException(e);
     }
   }
@@ -128,6 +126,7 @@ public class CommandLine {
     try {
       process.waitFor(timeout);
     } catch (InterruptedException e) {
+      Thread.currentThread().interrupt();
       throw new WebDriverException(e);
     }
   }

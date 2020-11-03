@@ -1,4 +1,4 @@
-﻿// <copyright file="PointerInputDevice.cs" company="WebDriver Committers">
+// <copyright file="PointerInputDevice.cs" company="WebDriver Committers">
 // Licensed to the Software Freedom Conservancy (SFC) under one
 // or more contributor license agreements. See the NOTICE file
 // distributed with this work for additional information
@@ -29,7 +29,7 @@ namespace OpenQA.Selenium.Interactions
     /// <summary>
     /// Represents the origin of the coordinates for mouse movement.
     /// </summary>
-    internal enum CoordinateOrigin
+    public enum CoordinateOrigin
     {
         /// <summary>
         /// The coordinate origin is the origin of the view port of the browser.
@@ -50,7 +50,7 @@ namespace OpenQA.Selenium.Interactions
     /// <summary>
     /// Specifies the type of pointer a pointer device represents.
     /// </summary>
-    internal enum PointerKind
+    public enum PointerKind
     {
         /// <summary>
         /// The pointer device is a mouse.
@@ -71,8 +71,13 @@ namespace OpenQA.Selenium.Interactions
     /// <summary>
     /// Specifies the button used during a pointer down or up action.
     /// </summary>
-    internal enum MouseButton
+    public enum MouseButton
     {
+        /// <summary>
+        /// This button is used for signifying touch actions.
+        /// </summary>
+        Touch = 0,
+
         /// <summary>
         /// The button used is the primary button.
         /// </summary>
@@ -92,7 +97,7 @@ namespace OpenQA.Selenium.Interactions
     /// <summary>
     /// Represents a pointer input device, such as a stylus, mouse, or finger on a touch screen.
     /// </summary>
-    internal class PointerInputDevice : InputDevice
+    public class PointerInputDevice : InputDevice
     {
         private PointerKind pointerKind;
 

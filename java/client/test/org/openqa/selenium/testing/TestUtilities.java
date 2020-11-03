@@ -24,8 +24,8 @@ import org.openqa.selenium.Platform;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.htmlunit.HtmlUnitDriver;
 import org.openqa.selenium.remote.CapabilityType;
-import org.openqa.selenium.testing.drivers.SauceDriver;
 
+import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -38,9 +38,6 @@ public class TestUtilities {
   }
 
   public static String getUserAgent(WebDriver driver) {
-    if (driver instanceof HtmlUnitDriver) {
-      return ((HtmlUnitDriver) driver).getBrowserVersion().getUserAgent();
-    }
     try {
       return (String) ((JavascriptExecutor) driver).executeScript(
         "return navigator.userAgent;");
@@ -60,59 +57,39 @@ public class TestUtilities {
 
   public static boolean isInternetExplorer(WebDriver driver) {
     String userAgent = getUserAgent(driver);
-    return userAgent.contains("MSIE") || userAgent.contains("Trident");
-  }
-
-  public static boolean isIe6(WebDriver driver) {
-    return isInternetExplorer(driver)
-        && getUserAgent(driver).contains("MSIE 6");
-  }
-
-  public static boolean isIe7(WebDriver driver) {
-    return isInternetExplorer(driver)
-           && getUserAgent(driver).contains("MSIE 7");
-  }
-
-  public static boolean isOldIe(WebDriver driver) {
-    if (!isInternetExplorer(driver)) {
-      return false;
-    }
-    if (driver instanceof HtmlUnitDriver) {
-      String applicationVersion = ((HtmlUnitDriver) driver).getBrowserVersion().getApplicationVersion();
-      return Double.parseDouble(applicationVersion.split(" ")[0]) < 5;
-    }
-    try {
-      String jsToExecute = "return parseInt(window.navigator.appVersion.split(' ')[0]);";
-      // IE9 is trident version 5.  IE9 is the start of new IE.
-      return ((Long)((JavascriptExecutor)driver).executeScript(jsToExecute)).intValue() < 5;
-    } catch (Throwable t) {
-      return false;
-    }
+    return userAgent != null && userAgent.contains("MSIE") || userAgent.contains("Trident");
   }
 
   public static boolean isChrome(WebDriver driver) {
     return !(driver instanceof HtmlUnitDriver) && getUserAgent(driver).contains("Chrome");
   }
 
-  public static boolean isOldChromedriver(WebDriver driver) {
+  public static int getChromeVersion(WebDriver driver) {
     if (!(driver instanceof HasCapabilities)) {
       // Driver does not support capabilities -- not a chromedriver at all.
-      return false;
+      return 0;
     }
     Capabilities caps = ((HasCapabilities) driver).getCapabilities();
     String chromedriverVersion = (String) caps.getCapability("chrome.chromedriverVersion");
+    if (chromedriverVersion == null) {
+      Object chrome = caps.getCapability("chrome");
+      if (chrome != null) {
+        chromedriverVersion = (String) ((Map<?,?>) chrome).get("chromedriverVersion");
+      }
+    }
     if (chromedriverVersion != null) {
       String[] versionMajorMinor = chromedriverVersion.split("\\.", 2);
       if (versionMajorMinor.length > 1) {
         try {
-          return 20 < Long.parseLong(versionMajorMinor[0]);
+          return Integer.parseInt(versionMajorMinor[0]);
         } catch (NumberFormatException e) {
           // First component of the version is not a number -- not a chromedriver.
-          return false;
+          return 0;
         }
       }
     }
-    return false;
+    return 0;
+
   }
 
   /**
@@ -174,10 +151,6 @@ public class TestUtilities {
 
 
   public static Platform getEffectivePlatform() {
-    if (SauceDriver.shouldUseSauce()) {
-      return SauceDriver.getEffectivePlatform();
-    }
-
     return Platform.getCurrent();
   }
 
@@ -194,15 +167,11 @@ public class TestUtilities {
   }
 
   public static boolean isLocal() {
-    return !Boolean.getBoolean("selenium.browser.remote") && !SauceDriver.shouldUseSauce();
+    return ! (Boolean.getBoolean("selenium.browser.remote")
+              || Boolean.getBoolean("selenium.browser.grid"));
   }
 
-  public static Throwable catchThrowable(Runnable f) {
-    try {
-      f.run();
-    } catch (Throwable throwable) {
-      return throwable;
-    }
-    return null;
+  public static boolean isOnTravis() {
+    return Boolean.parseBoolean(System.getenv("TRAVIS"));
   }
 }

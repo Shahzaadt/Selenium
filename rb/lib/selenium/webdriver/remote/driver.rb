@@ -1,5 +1,5 @@
-# encoding: utf-8
-#
+# frozen_string_literal: true
+
 # Licensed to the Software Freedom Conservancy (SFC) under one
 # or more contributor license agreements.  See the NOTICE file
 # distributed with this work for additional information
@@ -26,18 +26,26 @@ module Selenium
       # @api private
       #
 
-      module Driver
+      class Driver < WebDriver::Driver
+        include DriverExtensions::UploadsFiles
+        include DriverExtensions::TakesScreenshot
+        include DriverExtensions::HasSessionId
+        include DriverExtensions::Rotatable
+        include DriverExtensions::HasRemoteStatus
+        include DriverExtensions::HasWebStorage
 
-        def self.new(**opts)
-          listener = opts.delete(:listener)
-          bridge = Bridge.handshake(opts)
-          if bridge.dialect == :w3c
-            W3C::Driver.new(bridge, listener: listener)
-          else
-            OSS::Driver.new(bridge, listener: listener)
+        def initialize(bridge: nil, listener: nil, **opts)
+          desired_capabilities = opts[:desired_capabilities]
+          if desired_capabilities.is_a?(Symbol)
+            unless Remote::Capabilities.respond_to?(desired_capabilities)
+              raise Error::WebDriverError, "invalid desired capability: #{desired_capabilities.inspect}"
+            end
+
+            opts[:desired_capabilities] = Remote::Capabilities.__send__(desired_capabilities)
           end
+          opts[:url] ||= "http://#{Platform.localhost}:4444/wd/hub"
+          super
         end
-
       end # Driver
     end # Remote
   end # WebDriver

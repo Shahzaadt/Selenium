@@ -15,7 +15,6 @@
 // specific language governing permissions and limitations
 // under the License.
 
-
 package org.openqa.selenium.support;
 
 import java.util.regex.Matcher;
@@ -54,7 +53,7 @@ public class Color {
     );
   }
 
-  Color(int red, int green, int blue, double alpha) {
+  public Color(int red, int green, int blue, double alpha) {
     this.red = red;
     this.green = green;
     this.blue = blue;
@@ -122,7 +121,7 @@ public class Color {
     return result;
   }
 
-  private static abstract class Converter {
+  private abstract static class Converter {
     public Color getColor(String value) {
       Matcher matcher = getPattern().matcher(value);
       if (matcher.find()) {

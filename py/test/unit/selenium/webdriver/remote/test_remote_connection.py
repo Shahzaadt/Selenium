@@ -16,11 +16,15 @@
 # under the License.
 
 
+import urllib3
+import pytest
+
 try:
     from urllib import parse
 except ImportError:  # above is available in py3+, below is py2.7
     import urlparse as parse
 
+from selenium import __version__
 from selenium.webdriver.remote.remote_connection import (
     RemoteConnection,
 )
@@ -33,7 +37,8 @@ def test_get_remote_connection_headers_defaults():
     assert 'Connection' not in headers.keys()
     assert headers.get('Accept') == 'application/json'
     assert headers.get('Content-Type') == 'application/json;charset=UTF-8'
-    assert headers.get('User-Agent') == 'Python http auth'
+    assert headers.get('User-Agent').startswith("selenium/%s (python " % __version__)
+    assert headers.get('User-Agent').split(' ')[-1] in {'windows)', 'mac)', 'linux)'}
 
 
 def test_get_remote_connection_headers_adds_auth_header_if_pass():
@@ -46,6 +51,56 @@ def test_get_remote_connection_headers_adds_keep_alive_if_requested():
     url = 'http://remote'
     headers = RemoteConnection.get_remote_connection_headers(parse.urlparse(url), keep_alive=True)
     assert headers.get('Connection') == 'keep-alive'
+
+
+def test_get_proxy_url_http(mock_proxy_settings):
+    proxy = 'http://http_proxy.com:8080'
+    remote_connection = RemoteConnection('http://remote', keep_alive=False)
+    proxy_url = remote_connection._get_proxy_url()
+    assert proxy_url == proxy
+
+
+def test_get_proxy_url_https(mock_proxy_settings):
+    proxy = 'http://https_proxy.com:8080'
+    remote_connection = RemoteConnection('https://remote', keep_alive=False)
+    proxy_url = remote_connection._get_proxy_url()
+    assert proxy_url == proxy
+
+
+def test_get_proxy_url_none(mock_proxy_settings_missing):
+    remote_connection = RemoteConnection('https://remote', keep_alive=False)
+    proxy_url = remote_connection._get_proxy_url()
+    assert proxy_url is None
+
+
+def test_get_connection_manager_without_proxy(mock_proxy_settings_missing):
+    remote_connection = RemoteConnection('http://remote', keep_alive=False)
+    conn = remote_connection._get_connection_manager()
+    assert type(conn) == urllib3.PoolManager
+
+
+def test_get_connection_manager_for_certs_and_timeout():
+    remote_connection = RemoteConnection('http://remote', keep_alive=False)
+    remote_connection.set_timeout(10)
+    conn = remote_connection._get_connection_manager()
+    assert conn.connection_pool_kw['timeout'] == 10
+    assert conn.connection_pool_kw['cert_reqs'] == 'CERT_REQUIRED'
+    assert 'site-packages/certifi/cacert.pem' in conn.connection_pool_kw['ca_certs']
+
+
+def test_get_connection_manager_with_proxy(mock_proxy_settings):
+    remote_connection = RemoteConnection('http://remote', keep_alive=False)
+    conn = remote_connection._get_connection_manager()
+    assert type(conn) == urllib3.ProxyManager
+    assert conn.proxy.scheme == 'http'
+    assert conn.proxy.host == 'http_proxy.com'
+    assert conn.proxy.port == 8080
+    remote_connection_https = RemoteConnection('https://remote', keep_alive=False)
+    conn = remote_connection_https._get_connection_manager()
+    assert type(conn) == urllib3.ProxyManager
+    assert conn.proxy.scheme == 'http'
+    assert conn.proxy.host == 'https_proxy.com'
+    assert conn.proxy.port == 8080
 
 
 class MockResponse:
@@ -62,25 +117,19 @@ class MockResponse:
         pass
 
 
-def test_remote_connection_adds_connection_headers_from_get_remote_connection_headers(mocker):
-    test_headers = {'FOO': 'bar', 'Content-Type': 'json'}
-    expected_request_headers = {'Foo': 'bar', 'Content-type': 'json'}
+@pytest.fixture
+def mock_proxy_settings_missing(monkeypatch):
+    monkeypatch.delenv("HTTPS_PROXY", raising=False)
+    monkeypatch.delenv("HTTP_PROXY", raising=False)
+    monkeypatch.delenv("https_proxy", raising=False)
+    monkeypatch.delenv("http_proxy", raising=False)
 
-    # Stub out the get_remote_connection_headers method to return something testable
-    mocker.patch(
-        'selenium.webdriver.remote.remote_connection.RemoteConnection.get_remote_connection_headers'
-    ).return_value = test_headers
 
-    # Stub out response
-    try:
-        mock_open = mocker.patch('urllib.request.OpenerDirector.open')
-    except ImportError:
-        mock_open = mocker.patch('urllib2.OpenerDirector.open')
-
-    def assert_header_added(request, timeout):
-        assert request.headers == expected_request_headers
-        return MockResponse()
-
-    mock_open.side_effect = assert_header_added
-
-    RemoteConnection('http://remote', resolve_ip=False).execute('status', {})
+@pytest.fixture
+def mock_proxy_settings(monkeypatch):
+    http_proxy = 'http://http_proxy.com:8080'
+    https_proxy = 'http://https_proxy.com:8080'
+    monkeypatch.setenv("HTTPS_PROXY", https_proxy)
+    monkeypatch.setenv("HTTP_PROXY", http_proxy)
+    monkeypatch.setenv("https_proxy", https_proxy)
+    monkeypatch.setenv("http_proxy", http_proxy)

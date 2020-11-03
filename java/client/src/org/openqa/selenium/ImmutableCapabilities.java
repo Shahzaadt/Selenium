@@ -17,37 +17,105 @@
 
 package org.openqa.selenium;
 
+import org.openqa.selenium.internal.Require;
 
-import java.io.Serializable;
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.Map;
 
-public class ImmutableCapabilities implements Capabilities, Serializable {
+public class ImmutableCapabilities implements Capabilities {
 
-  private static final long serialVersionUID = 665766108972704060L;
+  private MutableCapabilities delegate = new MutableCapabilities();
 
-  private final Map<String, Object> caps = new HashMap<>();
+  public ImmutableCapabilities() {
+  }
+
+  public ImmutableCapabilities(String k, Object v) {
+    delegate.setCapability(k, v);
+  }
+
+  public ImmutableCapabilities(String k1, Object v1, String k2, Object v2) {
+    delegate.setCapability(k1, v1);
+    delegate.setCapability(k2, v2);
+  }
+
+  public ImmutableCapabilities(String k1, Object v1, String k2, Object v2, String k3, Object v3) {
+    delegate.setCapability(k1, v1);
+    delegate.setCapability(k2, v2);
+    delegate.setCapability(k3, v3);
+  }
+
+  public ImmutableCapabilities(
+      String k1, Object v1,
+      String k2, Object v2,
+      String k3, Object v3,
+      String k4, Object v4) {
+    delegate.setCapability(k1, v1);
+    delegate.setCapability(k2, v2);
+    delegate.setCapability(k3, v3);
+    delegate.setCapability(k4, v4);
+  }
+
+  public ImmutableCapabilities(
+      String k1, Object v1,
+      String k2, Object v2,
+      String k3, Object v3,
+      String k4, Object v4,
+      String k5, Object v5) {
+    delegate.setCapability(k1, v1);
+    delegate.setCapability(k2, v2);
+    delegate.setCapability(k3, v3);
+    delegate.setCapability(k4, v4);
+    delegate.setCapability(k5, v5);
+  }
 
   public ImmutableCapabilities(Capabilities other) {
     this(other.asMap());
   }
 
-  public ImmutableCapabilities(Map<String, ?> capabilities) {
+  public ImmutableCapabilities(Map<?, ?> capabilities) {
     capabilities.forEach((key, value) -> {
-      if (value != null) {
-        caps.put(key, value);
-      }
+      Require.argument("Key", key).instanceOf(String.class);
+      delegate.setCapability(String.valueOf(key), value);
     });
   }
 
   @Override
   public Object getCapability(String capabilityName) {
-    return caps.get(capabilityName);
+    return delegate.getCapability(capabilityName);
   }
 
   @Override
-  public Map<String, ?> asMap() {
-    return Collections.unmodifiableMap(caps);
+  public Map<String, Object> asMap() {
+    return delegate.asMap();
+  }
+
+  @Override
+  public int hashCode() {
+    return delegate.hashCode();
+  }
+
+  @Override
+  public boolean equals(Object o) {
+    if (this == o) {
+      return true;
+    }
+    if (!(o instanceof Capabilities)) {
+      return false;
+    }
+    return delegate.equals(o);
+  }
+
+  @Override
+  public String toString() {
+    return delegate.toString();
+  }
+
+  public static ImmutableCapabilities copyOf(Capabilities capabilities) {
+    Require.nonNull("Capabilities", capabilities);
+
+    if (capabilities instanceof ImmutableCapabilities) {
+      return (ImmutableCapabilities) capabilities;
+    }
+
+    return new ImmutableCapabilities(capabilities);
   }
 }
